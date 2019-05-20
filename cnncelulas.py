@@ -73,7 +73,7 @@ QT_PLUGIN_PATH
 import matplotlib.pyplot as plt
 
 
-archivoPesos = "/content/drive/My Drive/Colab/celulas_weights1"
+archivoPesos = ".\\pesos\\celulas_weights1"
 
 """**Red Convolucional**
 
@@ -211,71 +211,53 @@ Paper original: https://arxiv.org/pdf/1608.06993v3.pdf
 Explicacion cool: https://towardsdatascience.com/review-densenet-image-classification-b6631a8ef803
 
 """
+"""
+Clase que hereda del paquete neural net de pytorch
+
+Es una DenseNet-BC con enfoque en DN-201
+
+Estara muy apegado a lo escrito en el paper original y se parecera a la config
+usada para ImageNet
+
+
+Paper original: https://arxiv.org/pdf/1608.06993v3.pdf
+Explicacion cool: https://towardsdatascience.com/review-densenet-image-classification-b6631a8ef803
+
+"""
+
+
 class DenseNet(nn.Module):
     def __init__(self):
         super(DenseNet, self).__init__()
-        #se importan las capas de resnet 50, excepto el top model
-        #se importan los pesos de imagenet
-        res50_model = models.resnet50( pretrained = True)
-        self.res50_conv = nn.Sequential(*list(res50_model.children())[:-2])
-        #se asegura que todas las capas sean entrenables
-        for param in self.res50_conv.parameters():
-          param.requires_grad = True
-        #la salida del promediado global es 2048 promedios de los 2048 feature maps que genera resnet
-        self.capaCompletamenteConectada1 = nn.Linear(2048, 2)
-        #2 clases, perro o gato
-        
-        
-        
-        self.densenet121 = models.densenet121(pretrained=True)
+        # se importan las capas de densenet169, excepto el top model
+        # se importan los pesos de imagenet
+        densenetModel = models.densenet201(pretrained=True)
 
-        # Freeze parameters so we don't backprop through them
-        for param in self.densenet121.parameters():
-          param.requires_grad = True
+        # self.densenet201 = nn.Sequential(*list(models.densenet201( pretrained = True).children()))#[:-1])
+        self.densenet201 = models.densenet201(pretrained=True)
 
-        self.densenet121.classifier = nn.Sequential(nn.Linear(1024, 256),
-                                       nn.ReLU(),
-                                       nn.Dropout(0.2),
-                                       nn.Linear(256, 2),
-                                       nn.LogSoftmax(dim=1))
-        
+        self.densenet201.features.conv0 = nn.Conv2d(1, 64, kernel_size=7, stride=2,
+                                                    padding=3, bias=False)
+
+        # se asegura que todas las capas sean entrenables
+        for param in self.densenet201.parameters():
+            param.requires_grad = True
+        # la salida del promediado global es 2048 promedios de los 2048 feature maps que genera resnet
+
+        # self.capaCompletamenteConectada1 = nn.Linear(1000, 2)
+        ##2 clases, perro o gato
+
+        self.classifier = nn.Sequential(nn.Linear(1000, 256),
+                                        nn.ReLU(),
+                                        nn.Dropout(0.2),
+                                        nn.Linear(256, 2),
+                                        nn.LogSoftmax(dim=1))
+
     def forward(self, x):
-      
-      output = self.densenet121(x)
-      return output
-        
+        output = self.densenet201(x)
+        output = self.classifier(output)
+        return output
 
-    """
-    Pasada hacia adelante, sobrecargado de la clase nn neural network
-    @param x, muestra a estimar su salida
-    """
-    def forward2(self, x):
-      #Apila las capas
-      #Primero aplica las capas de Resnet50
-      x =  self.res50_conv(x)        
-
-
-
-
-
-
-      #outputs 2048 activation maps of 8x8 
-      #https://resources.wolframcloud.com/NeuralNetRepository/resources/ResNet-50-Trained-on-ImageNet-Competition-Data
-      #Promediado de los feature maps
-      x =  F.avg_pool2d(x, x.size()[2:])
-      #Aplanado
-      x = x.view(-1, 2048)
-      #Se pasa por la capa completamente conectada
-      x = F.relu(self.capaCompletamenteConectada1(x))
-      #Dropout para la regularizacion del modelo
-      x = F.dropout(x, training = self.training)
-      #Salida usando funcion softmax
-      output = F.log_softmax(x, dim = 1)        
-      return output
-
-from torchsummary import summary
-model = DenseNet().to(device)
-summary(model, input_size=(3, 224, 224))
 
 """**Cargador de datos**
 
@@ -309,6 +291,7 @@ class DataSetCelulas(Dataset):
         imagePIL = Image.open(samplePath)
         imagePIL.mode = "I"
         print("aaaa",imagePIL.mode,"aaa",samplePath)
+        imagePIL=imagePIL.convert("F")
 
         #apply transformations
 
@@ -451,12 +434,10 @@ def main():
   trainTransforms = transforms.Compose([transforms.RandomRotation(30),
                                        transforms.RandomResizedCrop(224),
                                        transforms.RandomHorizontalFlip(),
-                                       transforms.ToTensor(),
-                                       transforms.Normalize([0.485, 0.456, 0.406],
-                                                            [0.229, 0.224, 0.225])])
+                                       transforms.ToTensor()])
   dataset = DataSetCelulas(".\\dataset", trainTransforms)
-  epochs = 100;
-  learningRate = 0.001;
+  epochs = 100
+  learningRate = 0.001
   batchSize = 12
   trainModel(device, dataset, epochs, learningRate, batchSize)  
   
